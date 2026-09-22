@@ -1,0 +1,42 @@
+# 定時從 Google Sheets 重新生成 HTML，並觸發 Vercel 重新部署
+# 一般 push 時 Vercel 會自行執行 buildCommand，此 workflow 用於「只更新 Sheets 不 push 程式碼」的情境
+
+name: Scheduled Regenerate
+
+on:
+  schedule:
+    # 每 6 小時自動重新生成（UTC 時間，台灣時間 = UTC+8）
+    - cron: "0 */6 * * *"
+  workflow_dispatch:  # 允許在 GitHub Actions 頁面手動觸發
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate HTML
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python generate.py
+
+      - name: Trigger Vercel Deploy
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -n "$VERCEL_DEPLOY_HOOK" ]; then
+            curl -X POST "$VERCEL_DEPLOY_HOOK"
+            echo "已觸發 Vercel 重新部署"
+          else
+            echo "未設定 VERCEL_DEPLOY_HOOK，跳過。請在 Vercel → Settings → Git → Deploy Hooks 建立。"
+          fi
