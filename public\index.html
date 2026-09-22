@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iPhone 回收價格監控</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 16px;
+      color: #333;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      color: #fff;
+      margin-bottom: 20px;
+    }
+
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    header p {
+      font-size: 0.85rem;
+      opacity: 0.85;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .filter-group label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .filter-group select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      background: #fafafa;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+
+    .filter-group select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .stat-box {
+      background: linear-gradient(135deg, #667eea22, #764ba222);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .stat-box .value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #667eea;
+    }
+
+    .stat-box .label {
+      font-size: 0.75rem;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    #price-chart {
+      width: 100% !important;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    thead th {
+      background: #667eea;
+      color: #fff;
+      padding: 10px 8px;
+      text-align: left;
+      font-weight: 600;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+    }
+
+    tbody td {
+      padding: 9px 8px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    tbody tr:hover {
+      background: #f8f9ff;
+    }
+
+    td.price {
+      font-weight: 600;
+      color: #667eea;
+      text-align: right;
+    }
+
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #1a1a2e;
+    }
+
+    footer {
+      text-align: center;
+      color: rgba(255,255,255,0.7);
+      font-size: 0.75rem;
+      padding: 16px 0;
+    }
+
+    @media (max-width: 480px) {
+      header h1 { font-size: 1.3rem; }
+      .card { padding: 14px; border-radius: 12px; }
+      .stat-box .value { font-size: 1.1rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📱 iPhone 回收價格監控</h1>
+      <p>最後更新：2026-09-22 14:28:06</p>
+    </header>
+
+    <!-- 篩選器 -->
+    <div class="card">
+      <div class="filters">
+        <div class="filter-group">
+          <label for="filter-model">型號</label>
+          <select id="filter-model" onchange="applyFilters()">
+            <option value="all">全部</option>
+<option value="iPhone 16">iPhone 16</option>
+<option value="iPhone 16 Pro">iPhone 16 Pro</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="filter-capacity">容量</label>
+          <select id="filter-capacity" onchange="applyFilters()">
+            <option value="all">全部</option>
+<option value="128GB">128GB</option>
+<option value="256GB">256GB</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="filter-color">顏色</label>
+          <select id="filter-color" onchange="applyFilters()">
+            <option value="all">全部</option>
+<option value="原色鈦金屬">原色鈦金屬</option>
+<option value="黑色">黑色</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 摘要統計 -->
+      <div class="stats">
+        <div class="stat-box">
+          <div class="value" id="stat-count">12</div>
+          <div class="label">資料筆數</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="stat-max">$7,200</div>
+          <div class="label">最高價</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="stat-min">$5,100</div>
+          <div class="label">最低價</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="stat-avg">$6,552</div>
+          <div class="label">平均價</div>
+        </div>
+      </div>
+
+      <!-- Plotly 折線圖 -->
+      <div style="height:480px; width:100%;">                        <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+        <script charset="utf-8" src="https://cdn.plot.ly/plotly-4.1.1.min.js" integrity="sha256-O24V1F27f8pb0glCkelh3cVHLNiHAJ5gCaVtq2aNch8=" crossorigin="anonymous"></script>                <div id="price-chart" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("price-chart")) {                    Plotly.newPlot(                        "price-chart",                        [{"hovertemplate":"\u003cb\u003e%{fullData.name}\u003c\u002fb\u003e\u003cbr\u003e\u6642\u9593\uff1a%{x|%Y-%m-%d %H:%M}\u003cbr\u003e\u56de\u6536\u50f9\uff1a$%{y:,.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#636EFA","width":2.5},"marker":{"color":"#636EFA","size":7},"mode":"lines+markers","name":"iPhone 16 Pro | 256GB | \u539f\u8272\u9226\u91d1\u5c6c","visible":true,"x":["2025-09-20T10:00:00.000000","2025-09-20T14:00:00.000000","2025-09-20T18:00:00.000000","2025-09-21T10:00:00.000000","2025-09-21T14:00:00.000000","2025-09-21T18:00:00.000000","2025-09-22T10:00:00.000000","2025-09-22T14:00:00.000000","2025-09-22T18:00:00.000000"],"y":{"dtype":"i2","bdata":"IBzuG7wbihtYG0QbJhv0GsIa"},"type":"scatter"},{"hovertemplate":"\u003cb\u003e%{fullData.name}\u003c\u002fb\u003e\u003cbr\u003e\u6642\u9593\uff1a%{x|%Y-%m-%d %H:%M}\u003cbr\u003e\u56de\u6536\u50f9\uff1a$%{y:,.0f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#EF553B","width":2.5},"marker":{"color":"#EF553B","size":7},"mode":"lines+markers","name":"iPhone 16 | 128GB | \u9ed1\u8272","visible":true,"x":["2025-09-20T12:00:00.000000","2025-09-21T12:00:00.000000","2025-09-22T12:00:00.000000"],"y":{"dtype":"i2","bdata":"UBQeFOwT"},"type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05}}},"title":{"font":{"size":22,"color":"#1a1a2e"},"text":"\ud83d\udcf1 iPhone \u56de\u6536\u50f9\u683c\u8d70\u52e2","x":0.5,"xanchor":"center"},"xaxis":{"title":{"text":"\u65e5\u671f \u002f \u6642\u6bb5"},"gridcolor":"#e8e8e8","tickformat":"%m\u002f%d %H:%M"},"yaxis":{"title":{"text":"\u56de\u6536\u50f9\uff08HKD\uff09"},"gridcolor":"#e8e8e8","tickformat":"$,.0f"},"legend":{"font":{"size":11},"orientation":"h","yanchor":"bottom","y":-0.35,"xanchor":"center","x":0.5},"margin":{"l":60,"r":30,"t":80,"b":120},"hovermode":"x unified","plot_bgcolor":"#fafafa","paper_bgcolor":"#ffffff","height":480},                        {"responsive": true}                    )                };            </script>        </div>
+    </div>
+
+    <!-- 原始數據表格 -->
+    <div class="card">
+      <div class="section-title">📋 原始數據</div>
+      <div class="table-wrapper">
+        <table id="data-table">
+          <thead>
+            <tr>
+              <th>日期時間</th>
+              <th>型號</th>
+              <th>容量</th>
+              <th>顏色</th>
+              <th>回收價</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td>2025-09-20 10:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$7,200</td></tr>
+<tr><td>2025-09-20 12:00</td><td>iPhone 16</td><td>128GB</td><td>黑色</td><td class='price'>$5,200</td></tr>
+<tr><td>2025-09-20 14:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$7,150</td></tr>
+<tr><td>2025-09-20 18:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$7,100</td></tr>
+<tr><td>2025-09-21 10:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$7,050</td></tr>
+<tr><td>2025-09-21 12:00</td><td>iPhone 16</td><td>128GB</td><td>黑色</td><td class='price'>$5,150</td></tr>
+<tr><td>2025-09-21 14:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$7,000</td></tr>
+<tr><td>2025-09-21 18:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$6,980</td></tr>
+<tr><td>2025-09-22 10:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$6,950</td></tr>
+<tr><td>2025-09-22 12:00</td><td>iPhone 16</td><td>128GB</td><td>黑色</td><td class='price'>$5,100</td></tr>
+<tr><td>2025-09-22 14:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$6,900</td></tr>
+<tr><td>2025-09-22 18:00</td><td>iPhone 16 Pro</td><td>256GB</td><td>原色鈦金屬</td><td class='price'>$6,850</td></tr>
+
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer>
+      Powered by Plotly · 數據來源 Google Sheets
+    </footer>
+  </div>
+
+  <script>
+    const TRACE_META = [{"model": "iPhone 16 Pro", "capacity": "256GB", "color": "原色鈦金屬", "legend": "iPhone 16 Pro | 256GB | 原色鈦金屬"}, {"model": "iPhone 16", "capacity": "128GB", "color": "黑色", "legend": "iPhone 16 | 128GB | 黑色"}];
+
+    function applyFilters() {
+      const model    = document.getElementById('filter-model').value;
+      const capacity = document.getElementById('filter-capacity').value;
+      const color    = document.getElementById('filter-color').value;
+
+      const visibility = TRACE_META.map(t => {
+        if (model    !== 'all' && t.model    !== model)    return 'legendonly';
+        if (capacity !== 'all' && t.capacity !== capacity) return 'legendonly';
+        if (color    !== 'all' && t.color    !== color)    return 'legendonly';
+        return true;
+      });
+
+      Plotly.restyle('price-chart', { visible: visibility });
+
+      // 同步篩選表格
+      filterTable(model, capacity, color);
+    }
+
+    function filterTable(model, capacity, color) {
+      const rows = document.querySelectorAll('#table-body tr');
+      rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        const rModel    = cells[1].textContent;
+        const rCapacity = cells[2].textContent;
+        const rColor    = cells[3].textContent;
+        const show =
+          (model    === 'all' || rModel    === model) &&
+          (capacity === 'all' || rCapacity === capacity) &&
+          (color    === 'all' || rColor    === color);
+        row.style.display = show ? '' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>
