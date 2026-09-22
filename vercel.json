@@ -2,9 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "name": "price-monitor",
-  "buildCommand": "pip install -r requirements.txt && python generate.py",
+  "buildCommand": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python generate.py",
   "outputDirectory": "public",
-  "installCommand": "pip install -r requirements.txt",
   "framework": null,
   "rewrites": [
     {
