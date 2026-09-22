@@ -15,10 +15,11 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
@@ -34,22 +35,31 @@ OUTPUT_HTML = ROOT / "public" / "index.html"
 SPREADSHEET_NAME = "iPhone回收價格"  # 試算表名稱
 WORKSHEET_NAME = "Sheet1"           # 工作表名稱（預設第一個分頁）
 
-# 欄位對應（Google Sheets / Excel 的欄位名稱）
-COLUMN_MAP = {
-    "date": "Date",
-    "time": "Time",
-    "model": "Model",
-    "capacity": "Capacity",
-    "color": "Color",
-    "price": "Price",
+# 欄位別名（支援中英文欄位名 → 統一小寫欄位名）
+COL_ALIASES = {
+    "date": ["Date", "日期", "date"],
+    "time": ["Time", "時段", "time"],
+    "model": ["Model", "型號", "model"],
+    "capacity": ["Capacity", "容量", "capacity"],
+    "color": ["Color", "顏色", "color"],
+    "price": ["Price", "回收價", "price", "價格"],
 }
+
+# Plotly 預設調色盤
+LINE_COLORS = [
+    "#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A",
+    "#19D3F3", "#FF6692", "#B6E880", "#FF97FF", "#FECB52",
+    "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
+]
+
+Record = dict[str, Any]
 
 
 # ===========================================================================
 # 1. 讀取數據
 # ===========================================================================
 
-def load_from_google_sheets() -> pd.DataFrame:
+def load_from_google_sheets() -> list[Record]:
     """
     使用 gspread 從 Google Sheets 讀取數據。
 
@@ -94,7 +104,6 @@ def load_from_google_sheets() -> pd.DataFrame:
         "https://www.googleapis.com/auth/drive.readonly",
     ]
 
-    # 優先讀本地 JSON，其次讀 Vercel 環境變數
     creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     if creds_json:
         info = json.loads(creds_json)
@@ -110,24 +119,44 @@ def load_from_google_sheets() -> pd.DataFrame:
     spreadsheet = client.open(SPREADSHEET_NAME)
     worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
     records = worksheet.get_all_records()
-    df = pd.DataFrame(records)
-    print(f"[INFO] 從 Google Sheets 讀取 {len(df)} 筆資料")
-    return df
+    print(f"[INFO] 從 Google Sheets 讀取 {len(records)} 筆資料")
+    return records
 
 
-def load_from_excel() -> pd.DataFrame:
-    """備用方案：讀取本地 Excel 檔案。"""
+def load_from_excel() -> list[Record]:
+    """備用方案：讀取本地 Excel 檔案（使用 openpyxl，不需 pandas）。"""
+    from openpyxl import load_workbook
+
     if not FALLBACK_EXCEL.exists():
         raise FileNotFoundError(
             f"找不到備用 Excel：{FALLBACK_EXCEL}\n"
             "請建立 data/價格表.xlsx，或設定 Google 憑證。"
         )
-    df = pd.read_excel(FALLBACK_EXCEL, engine="openpyxl")
-    print(f"[INFO] 從本地 Excel 讀取 {len(df)} 筆資料：{FALLBACK_EXCEL}")
-    return df
+
+    wb = load_workbook(FALLBACK_EXCEL, read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not rows:
+        return []
+
+    headers = [str(h).strip() if h is not None else "" for h in rows[0]]
+    records: list[Record] = []
+    for row in rows[1:]:
+        if not any(cell is not None and str(cell).strip() for cell in row):
+            continue
+        record = {}
+        for i, header in enumerate(headers):
+            if header:
+                record[header] = row[i] if i < len(row) else None
+        records.append(record)
+
+    print(f"[INFO] 從本地 Excel 讀取 {len(records)} 筆資料：{FALLBACK_EXCEL}")
+    return records
 
 
-def load_data() -> pd.DataFrame:
+def load_data() -> list[Record]:
     """依序嘗試 Google Sheets → 本地 Excel。"""
     has_env_creds = bool(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"))
     has_local_creds = CREDENTIALS_PATH.exists()
@@ -147,90 +176,119 @@ def load_data() -> pd.DataFrame:
 # 2. 資料清理
 # ===========================================================================
 
-def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_column_name(raw_key: str) -> str | None:
+    """將原始欄位名對應到標準欄位名。"""
+    raw_key = str(raw_key).strip()
+    for std_name, aliases in COL_ALIASES.items():
+        if raw_key in aliases:
+            return std_name
+    return None
+
+
+def _parse_datetime(date_str: str, time_str: str) -> datetime | None:
+    """合併日期 + 時段，嘗試多種格式解析。"""
+    date_str = str(date_str).strip()
+    time_str = str(time_str).strip()
+
+    formats = [
+        f"{date_str} {time_str}",
+        date_str,
+    ]
+    dt_formats = [
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+    ]
+
+    for text in formats:
+        for fmt in dt_formats:
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def _parse_price(value: Any) -> float | None:
+    """解析價格欄位。"""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return float(str(value).replace(",", "").replace("$", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def normalize_records(records: list[Record]) -> list[Record]:
     """標準化欄位名稱、型別，並建立 datetime 欄位。"""
-    # 建立欄位對應（支援中英文欄位名 → 統一小寫欄位名）
-    rename_map = {}
-    col_aliases = {
-        "date": ["Date", "日期", "date"],
-        "time": ["Time", "時段", "time"],
-        "model": ["Model", "型號", "model"],
-        "capacity": ["Capacity", "容量", "capacity"],
-        "color": ["Color", "顏色", "color"],
-        "price": ["Price", "回收價", "price", "價格"],
-    }
-    for std_name, aliases in col_aliases.items():
-        for alias in aliases:
-            if alias in df.columns:
-                rename_map[alias] = std_name
-                break
+    normalized: list[Record] = []
 
-    df = df.rename(columns=rename_map)
+    for raw in records:
+        row: Record = {}
+        for key, value in raw.items():
+            std_key = _normalize_column_name(key)
+            if std_key:
+                row[std_key] = value
 
-    required = ["date", "time", "model", "capacity", "color", "price"]
-    missing = [c for c in required if c not in df.columns]
+        price = _parse_price(row.get("price"))
+        if price is None:
+            continue
+
+        dt = _parse_datetime(row.get("date", ""), row.get("time", ""))
+        if dt is None:
+            continue
+
+        normalized.append({
+            "date": str(row.get("date", "")).strip(),
+            "time": str(row.get("time", "")).strip(),
+            "model": str(row.get("model", "")).strip(),
+            "capacity": str(row.get("capacity", "")).strip(),
+            "color": str(row.get("color", "")).strip(),
+            "price": price,
+            "datetime": dt,
+            "datetime_label": dt.strftime("%Y-%m-%d %H:%M"),
+        })
+
+    if not normalized:
+        raise ValueError("沒有有效資料列，請確認欄位名稱與內容格式。")
+
+    required = {"date", "time", "model", "capacity", "color", "price"}
+    sample = normalized[0]
+    missing = required - set(sample.keys())
     if missing:
-        raise ValueError(f"缺少必要欄位：{missing}。目前欄位：{list(df.columns)}")
+        raise ValueError(f"缺少必要欄位：{sorted(missing)}")
 
-    # 清理空白列
-    df = df.dropna(subset=["price"]).copy()
-    df["price"] = pd.to_numeric(df["price"], errors="coerce")
-    df = df.dropna(subset=["price"])
-
-    # 合併日期 + 時段
-    df["date"] = df["date"].astype(str).str.strip()
-    df["time"] = df["time"].astype(str).str.strip()
-    df["datetime"] = pd.to_datetime(
-        df["date"] + " " + df["time"],
-        errors="coerce",
-    )
-    # 若時段解析失敗，只用日期
-    mask = df["datetime"].isna()
-    if mask.any():
-        df.loc[mask, "datetime"] = pd.to_datetime(df.loc[mask, "date"], errors="coerce")
-
-    df = df.dropna(subset=["datetime"]).sort_values("datetime")
-    df["model"] = df["model"].astype(str).str.strip()
-    df["capacity"] = df["capacity"].astype(str).str.strip()
-    df["color"] = df["color"].astype(str).str.strip()
-    df["datetime_label"] = df["datetime"].dt.strftime("%Y-%m-%d %H:%M")
-
-    return df.reset_index(drop=True)
+    normalized.sort(key=lambda r: r["datetime"])
+    return normalized
 
 
 # ===========================================================================
 # 3. 生成 Plotly 圖表
 # ===========================================================================
 
-# Plotly 預設調色盤（不同型號/顏色用不同線條色）
-LINE_COLORS = [
-    "#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A",
-    "#19D3F3", "#FF6692", "#B6E880", "#FF97FF", "#FECB52",
-    "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
-]
+def build_figure(records: list[Record]) -> tuple[go.Figure, list[dict]]:
+    """建立折線圖，每個 (型號, 容量, 顏色) 組合一條線。"""
+    groups: dict[tuple[str, str, str], list[Record]] = defaultdict(list)
+    for row in records:
+        key = (row["model"], row["capacity"], row["color"])
+        groups[key].append(row)
 
-
-def build_figure(df: pd.DataFrame) -> tuple[go.Figure, list[dict]]:
-    """
-    建立折線圖，每個 (型號, 容量, 顏色) 組合一條線。
-    回傳 figure 與 trace 中繼資料（供前端篩選器使用）。
-    """
     fig = go.Figure()
     trace_meta: list[dict] = []
-
-    groups = df.groupby(["model", "capacity", "color"], sort=False)
     color_idx = 0
 
-    for (model, capacity, color), group in groups:
-        group = group.sort_values("datetime")
+    for (model, capacity, color), group_rows in groups.items():
+        group_rows.sort(key=lambda r: r["datetime"])
         legend_name = f"{model} | {capacity} | {color}"
         line_color = LINE_COLORS[color_idx % len(LINE_COLORS)]
         color_idx += 1
 
         fig.add_trace(
             go.Scatter(
-                x=group["datetime"],
-                y=group["price"],
+                x=[r["datetime"] for r in group_rows],
+                y=[r["price"] for r in group_rows],
                 mode="lines+markers",
                 name=legend_name,
                 line=dict(color=line_color, width=2.5),
@@ -289,34 +347,33 @@ def build_figure(df: pd.DataFrame) -> tuple[go.Figure, list[dict]]:
 # 4. 組裝完整 HTML（含篩選器 + 數據表格）
 # ===========================================================================
 
-def build_html_page(df: pd.DataFrame, fig: go.Figure, trace_meta: list[dict]) -> str:
+def build_html_page(records: list[Record], fig: go.Figure, trace_meta: list[dict]) -> str:
     """將 Plotly 圖表、篩選器、原始數據表格打包成響應式 HTML。"""
-
     chart_div = pio.to_html(fig, full_html=False, include_plotlyjs="cdn", div_id="price-chart")
 
-    models = sorted(df["model"].unique())
-    capacities = sorted(df["capacity"].unique())
-    colors = sorted(df["color"].unique())
+    models = sorted({r["model"] for r in records})
+    capacities = sorted({r["capacity"] for r in records})
+    colors = sorted({r["color"] for r in records})
 
     def make_options(items: list[str]) -> str:
         opts = ['<option value="all">全部</option>']
         opts += [f'<option value="{item}">{item}</option>' for item in items]
         return "\n".join(opts)
 
-    # 原始數據表格
-    display_df = df[["datetime_label", "model", "capacity", "color", "price"]].copy()
-    display_df.columns = ["日期時間", "型號", "容量", "顏色", "回收價"]
-    display_df["回收價"] = display_df["回收價"].apply(lambda x: f"${x:,.0f}")
+    prices = [r["price"] for r in records]
+    stat_max = max(prices)
+    stat_min = min(prices)
+    stat_avg = sum(prices) / len(prices)
 
     table_rows = ""
-    for _, row in display_df.iterrows():
+    for row in records:
         table_rows += (
             f"<tr>"
-            f"<td>{row['日期時間']}</td>"
-            f"<td>{row['型號']}</td>"
-            f"<td>{row['容量']}</td>"
-            f"<td>{row['顏色']}</td>"
-            f"<td class='price'>{row['回收價']}</td>"
+            f"<td>{row['datetime_label']}</td>"
+            f"<td>{row['model']}</td>"
+            f"<td>{row['capacity']}</td>"
+            f"<td>{row['color']}</td>"
+            f"<td class='price'>${row['price']:,.0f}</td>"
             f"</tr>\n"
         )
 
@@ -504,7 +561,6 @@ def build_html_page(df: pd.DataFrame, fig: go.Figure, trace_meta: list[dict]) ->
       <p>最後更新：{generated_at}</p>
     </header>
 
-    <!-- 篩選器 -->
     <div class="card">
       <div class="filters">
         <div class="filter-group">
@@ -527,31 +583,28 @@ def build_html_page(df: pd.DataFrame, fig: go.Figure, trace_meta: list[dict]) ->
         </div>
       </div>
 
-      <!-- 摘要統計 -->
       <div class="stats">
         <div class="stat-box">
-          <div class="value" id="stat-count">{len(df)}</div>
+          <div class="value" id="stat-count">{len(records)}</div>
           <div class="label">資料筆數</div>
         </div>
         <div class="stat-box">
-          <div class="value" id="stat-max">${df["price"].max():,.0f}</div>
+          <div class="value" id="stat-max">${stat_max:,.0f}</div>
           <div class="label">最高價</div>
         </div>
         <div class="stat-box">
-          <div class="value" id="stat-min">${df["price"].min():,.0f}</div>
+          <div class="value" id="stat-min">${stat_min:,.0f}</div>
           <div class="label">最低價</div>
         </div>
         <div class="stat-box">
-          <div class="value" id="stat-avg">${df["price"].mean():,.0f}</div>
+          <div class="value" id="stat-avg">${stat_avg:,.0f}</div>
           <div class="label">平均價</div>
         </div>
       </div>
 
-      <!-- Plotly 折線圖 -->
       {chart_div}
     </div>
 
-    <!-- 原始數據表格 -->
     <div class="card">
       <div class="section-title">📋 原始數據</div>
       <div class="table-wrapper">
@@ -593,8 +646,6 @@ def build_html_page(df: pd.DataFrame, fig: go.Figure, trace_meta: list[dict]) ->
       }});
 
       Plotly.restyle('price-chart', {{ visible: visibility }});
-
-      // 同步篩選表格
       filterTable(model, capacity, color);
     }}
 
@@ -624,47 +675,32 @@ def build_html_page(df: pd.DataFrame, fig: go.Figure, trace_meta: list[dict]) ->
 
 def create_sample_excel() -> None:
     """若 data/價格表.xlsx 不存在，自動建立範例資料供測試。"""
+    from openpyxl import Workbook
+
     FALLBACK_EXCEL.parent.mkdir(parents=True, exist_ok=True)
 
-    sample_data = {
-        "Date": [
-            "2025-09-20", "2025-09-20", "2025-09-20",
-            "2025-09-21", "2025-09-21", "2025-09-21",
-            "2025-09-22", "2025-09-22", "2025-09-22",
-            "2025-09-20", "2025-09-21", "2025-09-22",
-        ],
-        "Time": [
-            "10:00", "14:00", "18:00",
-            "10:00", "14:00", "18:00",
-            "10:00", "14:00", "18:00",
-            "12:00", "12:00", "12:00",
-        ],
-        "Model": [
-            "iPhone 16 Pro", "iPhone 16 Pro", "iPhone 16 Pro",
-            "iPhone 16 Pro", "iPhone 16 Pro", "iPhone 16 Pro",
-            "iPhone 16 Pro", "iPhone 16 Pro", "iPhone 16 Pro",
-            "iPhone 16", "iPhone 16", "iPhone 16",
-        ],
-        "Capacity": [
-            "256GB", "256GB", "256GB",
-            "256GB", "256GB", "256GB",
-            "256GB", "256GB", "256GB",
-            "128GB", "128GB", "128GB",
-        ],
-        "Color": [
-            "原色鈦金屬", "原色鈦金屬", "原色鈦金屬",
-            "原色鈦金屬", "原色鈦金屬", "原色鈦金屬",
-            "原色鈦金屬", "原色鈦金屬", "原色鈦金屬",
-            "黑色", "黑色", "黑色",
-        ],
-        "Price": [
-            7200, 7150, 7100,
-            7050, 7000, 6980,
-            6950, 6900, 6850,
-            5200, 5150, 5100,
-        ],
-    }
-    pd.DataFrame(sample_data).to_excel(FALLBACK_EXCEL, index=False, engine="openpyxl")
+    headers = ["Date", "Time", "Model", "Capacity", "Color", "Price"]
+    rows = [
+        ["2025-09-20", "10:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 7200],
+        ["2025-09-20", "14:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 7150],
+        ["2025-09-20", "18:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 7100],
+        ["2025-09-21", "10:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 7050],
+        ["2025-09-21", "14:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 7000],
+        ["2025-09-21", "18:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 6980],
+        ["2025-09-22", "10:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 6950],
+        ["2025-09-22", "14:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 6900],
+        ["2025-09-22", "18:00", "iPhone 16 Pro", "256GB", "原色鈦金屬", 6850],
+        ["2025-09-20", "12:00", "iPhone 16", "128GB", "黑色", 5200],
+        ["2025-09-21", "12:00", "iPhone 16", "128GB", "黑色", 5150],
+        ["2025-09-22", "12:00", "iPhone 16", "128GB", "黑色", 5100],
+    ]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    wb.save(FALLBACK_EXCEL)
     print(f"[INFO] 已建立範例 Excel：{FALLBACK_EXCEL}")
 
 
@@ -673,7 +709,6 @@ def create_sample_excel() -> None:
 # ===========================================================================
 
 def main() -> int:
-    # Windows 終端機預設 cp1252，需切換 UTF-8 才能正確顯示中文
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -682,28 +717,24 @@ def main() -> int:
     print("  iPhone 回收價格監控 — HTML 報表生成器")
     print("=" * 60)
 
-    # 確保範例 Excel 存在
     if not FALLBACK_EXCEL.exists():
         create_sample_excel()
 
-    # 讀取 & 清理數據
-    df = load_data()
-    df = normalize_dataframe(df)
-    print(f"[INFO] 有效資料 {len(df)} 筆，"
-          f"型號 {df['model'].nunique()} 種，"
-          f"日期範圍 {df['datetime'].min()} ~ {df['datetime'].max()}")
+    records = load_data()
+    records = normalize_records(records)
 
-    # 生成圖表
-    fig, trace_meta = build_figure(df)
+    models = {r["model"] for r in records}
+    dt_min = records[0]["datetime_label"]
+    dt_max = records[-1]["datetime_label"]
+    print(f"[INFO] 有效資料 {len(records)} 筆，型號 {len(models)} 種，日期範圍 {dt_min} ~ {dt_max}")
 
-    # 組裝 HTML
-    html = build_html_page(df, fig, trace_meta)
+    fig, trace_meta = build_figure(records)
+    html = build_html_page(records, fig, trace_meta)
 
-    # 寫出檔案
     OUTPUT_HTML.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_HTML.write_text(html, encoding="utf-8")
     print(f"[OK] 已生成：{OUTPUT_HTML}")
-    print(f"     用瀏覽器開啟此檔案即可預覽，或部署到 Vercel。")
+    print("     用瀏覽器開啟此檔案即可預覽，或部署到 Vercel。")
     return 0
 
 
