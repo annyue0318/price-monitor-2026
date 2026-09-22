@@ -1,0 +1,15 @@
+# Google 憑證（絕對不要上傳到 GitHub）
+credentials/service_account.json
+*.json
+!vercel.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
