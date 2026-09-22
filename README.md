@@ -1,5 +1,5 @@
 # price-monitor-2026
-test
+
 # 📱 iPhone 回收價格監控
 
 從 Google Sheets（或本地 Excel）讀取 iPhone 回收價數據，自動生成互動式 HTML 報表，部署到 Vercel 供手機隨時查看。
@@ -195,8 +195,8 @@ WORKSHEET_NAME = "Sheet1"  # 或你的工作表名稱
 **Q: 沒有 Google 憑證能跑嗎？**
 A: 可以。程式會自動使用 `data/價格表.xlsx` 作為備用數據源。
 
-**Q: Vercel 部署失敗？**
-A: 確認 `public/index.html` 已 commit 到 Git（本地先跑 `py generate.py`）。若 Build 階段需要 Google 憑證，請在 Vercel 設定 `GOOGLE_SERVICE_ACCOUNT_JSON` 環境變數。
+**Q: Vercel 部署失敗（numpy 版本衝突）？**
+A: 本專案已移除 `pandas`/`numpy` 依賴，改用 `openpyxl` + 純 Python 處理數據，避免 Vercel Python 3.14 與 3.12 版本不一致問題。`buildCommand` 只需 `python3 generate.py`。若 Build 需要 Google 憑證，請在 Vercel → Settings → Environment Variables 新增 `GOOGLE_SERVICE_ACCOUNT_JSON`。
 
 **Q: 圖表篩選器沒反應？**
 A: 確認瀏覽器允許 JavaScript，且網路能載入 Plotly CDN。
